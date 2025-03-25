@@ -60,6 +60,8 @@ func SubmitCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Printf("Sending the following code to OpenAI: \n%s\n", reqBody.SolidityCode)
+
 	// Create the request body for chat completions
 	openAIReqBody := OpenAIRequest{
 		Model: "gpt-3.5-turbo",
@@ -98,21 +100,31 @@ func SubmitCode(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"error":   "Error calling OpenAI API",
+			"error":   "Error making request to OpenAI",
 		})
 		return
 	}
 	defer resp.Body.Close()
 
-	var openAIResp OpenAIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
+	if resp.StatusCode != http.StatusOK {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"error":   "Error decoding OpenAI response",
+			"error":   fmt.Sprintf("OpenAI API returned status code: %d", resp.StatusCode),
 		})
 		return
 	}
 
+	var openAIResp OpenAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Error parsing OpenAI response",
+		})
+		return
+	}
+
+	// Process the response and extract invariants
+	// Process the response and extract invariants
 	var invariants []string
 	if len(openAIResp.Choices) > 0 {
 		content := openAIResp.Choices[0].Message.Content
@@ -125,8 +137,24 @@ func SubmitCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// Log the response for debugging
+	fmt.Printf("OpenAI Response: %+v\n", openAIResp)
+	fmt.Printf("Processed invariants: %+v\n", invariants)
+
+	// Send the final response
+	response := map[string]interface{}{
 		"success":    true,
-		"invariants": invariants,
-	})
+		"invariants": invariants, // Make sure this is an array of strings
+	}
+
+	// Send the response in the expected format
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Printf("Error encoding response: %v\n", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Error encoding response",
+		})
+		return
+	}
+
 }

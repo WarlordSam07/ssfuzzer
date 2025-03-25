@@ -50,59 +50,63 @@ contract Example {
         editor.setFontSize(14);
 
         // Submit Code  
-        document.getElementById('submitCode').addEventListener('click', async function() {
-            const invariantContainer = document.getElementById('invariants');
-            invariantContainer.innerHTML = '<p>Analyzing code...</p>';
-            
-            try {
-                const code = editor.getValue();
-                const response = await fetch('/submit-code', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ solidityCode: code })
-                });
+       // Submit Code  
+document.getElementById('submitCode').addEventListener('click', async function() {
+    const invariantContainer = document.getElementById('invariants');
+    invariantContainer.innerHTML = '<p>Analyzing code...</p>';
+    
+    try {
+        const code = editor.getValue();
+        console.log('Sending code:', code); // Debug log
 
-                const data = await response.json();
-                console.log('Response data:', data);
-
-                if (!response.ok) {
-                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
-                }
-
-                invariantContainer.innerHTML = '';
-                
-                if (data.success && Array.isArray(data.invariants)) {
-                    if (data.invariants.length === 0) {
-                        invariantContainer.innerHTML = '<p>No invariants found.</p>';
-                    } else {
-                        data.invariants.forEach((invariant, index) => {
-                            const div = document.createElement('div');
-                            const checkbox = document.createElement('input');
-                            checkbox.type = 'checkbox';
-                            checkbox.id = `invariant-${index}`;
-                            checkbox.value = invariant;
-                            
-                            const label = document.createElement('label');
-                            label.htmlFor = `invariant-${index}`;
-                            label.textContent = invariant;
-                            
-                            div.appendChild(checkbox);
-                            div.appendChild(label);
-                            div.appendChild(document.createElement('br'));
-                            invariantContainer.appendChild(div);
-                        });
-                        document.getElementById('generateTests').disabled = false;
-                    }
-                } else {
-                    throw new Error('Invalid response format');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                invariantContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
-            }
+        const response = await fetch('/submit-code', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ solidityCode: code })
         });
+
+        const data = await response.json();
+        console.log('Response data:', data); // Debug log
+
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        }
+
+        invariantContainer.innerHTML = '';
+        
+        if (data.success && Array.isArray(data.invariants)) {
+            if (data.invariants.length === 0) {
+                invariantContainer.innerHTML = '<p>No invariants found.</p>';
+            } else {
+                data.invariants.forEach((invariant, index) => {
+                    const div = document.createElement('div');
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `invariant-${index}`;
+                    checkbox.value = invariant;
+                    
+                    const label = document.createElement('label');
+                    label.htmlFor = `invariant-${index}`;
+                    label.textContent = invariant;
+                    
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    div.appendChild(document.createElement('br'));
+                    invariantContainer.appendChild(div);
+                });
+                document.getElementById('generateTests').disabled = false;
+            }
+        } else {
+            throw new Error('Invalid response format');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        invariantContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    }
+});
+
 
         // Generate Tests
         document.getElementById('generateTests').addEventListener('click', async function() {
