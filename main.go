@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,33 +11,39 @@ import (
 )
 
 func main() {
-
-	// Load environment variables from .env file
-	err := godotenv.Load()
-	if err != nil {
+	if err := godotenv.Load(); err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	// Now you can access the API key from the environment variables
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		log.Fatal("OpenAI API key not set in .env")
+	if os.Getenv("OPENAI_API_KEY") == "" {
+		log.Fatal("OPENAI_API_KEY not set in .env file")
 	}
-
-	fmt.Println("API Key loaded successfully")
 
 	r := mux.NewRouter()
 
-	// Serve static files (JS, CSS, etc.)
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+	// Add CORS middleware
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 
-	// Routes for the app
+	// Static files
+	r.PathPrefix("/static/").Handler(
+		http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
+	// Routes
 	r.HandleFunc("/", handlers.HomePage).Methods("GET")
-	r.HandleFunc("/submit-code", handlers.SubmitCode).Methods("POST")
+	r.HandleFunc("/submit-code", handlers.SubmitCode).Methods("POST", "OPTIONS")
 	r.HandleFunc("/generate-tests", handlers.GenerateTests).Methods("POST")
 	r.HandleFunc("/run-echidna", handlers.RunEchidna).Methods("POST")
 
-	// Start the server
-	fmt.Println("Starting server on :8080...")
+	log.Println("Server starting on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
 }

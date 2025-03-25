@@ -1,0 +1,4 @@
+testLimit: 50000
+coverage: true
+corpusDir: "corpus"
+testMode: "property"

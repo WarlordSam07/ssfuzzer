@@ -4,87 +4,98 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
 )
 
-// Struct to handle the response from OpenAI
+type OpenAIRequest struct {
+	Model       string        `json:"model"`
+	Messages    []ChatMessage `json:"messages"`
+	Temperature float64       `json:"temperature"`
+}
+
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 type OpenAIResponse struct {
 	Choices []struct {
-		Text string `json:"text"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
 	} `json:"choices"`
 }
 
-// SubmitCode receives Solidity code and sends it to ChatGPT to detect potential invariants
 func SubmitCode(w http.ResponseWriter, r *http.Request) {
-	// Read the Solidity code from the request
 	code := r.FormValue("solidityCode")
+	if code == "" {
+		http.Error(w, "No code provided", http.StatusBadRequest)
+		return
+	}
 
-	// Log the code for debugging purposes
-	log.Println("Received Solidity Code: ", code)
-
-	// Get the OpenAI API key from environment variables
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		http.Error(w, "OpenAI API key not set", http.StatusInternalServerError)
 		return
 	}
 
-	// Prepare the prompt for ChatGPT
-	prompt := fmt.Sprintf("Analyze the following Solidity code and detect potential invariants:\n\n%s", code)
-
-	// Send the request to OpenAI API
-	client := &http.Client{}
-	reqBody := map[string]interface{}{
-		"model":       "text-davinci-003", // You can use another model if you prefer
-		"prompt":      prompt,
-		"max_tokens":  1000,
-		"temperature": 0.5,
+	// Create the request body for chat completions
+	reqBody := OpenAIRequest{
+		Model: "gpt-3.5-turbo",
+		Messages: []ChatMessage{
+			{
+				Role:    "user",
+				Content: fmt.Sprintf("Analyze this Solidity smart contract and list potential invariants. Return each invariant on a new line:\n\n%s", code),
+			},
+		},
+		Temperature: 0.7,
 	}
 
-	reqBodyJson, err := json.Marshal(reqBody)
+	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		http.Error(w, "Error preparing the request", http.StatusInternalServerError)
+		http.Error(w, "Error preparing request", http.StatusInternalServerError)
 		return
 	}
 
-	// Make the POST request to OpenAI API
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/completions", bytes.NewBuffer(reqBodyJson))
+	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqJSON))
 	if err != nil {
-		http.Error(w, "Error creating the request", http.StatusInternalServerError)
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
 		return
 	}
 
-	// Add Authorization header with the OpenAI API key
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	// Get response from OpenAI
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		http.Error(w, "Error sending the request to OpenAI", http.StatusInternalServerError)
+		http.Error(w, "Error calling OpenAI API", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Decode the response from OpenAI
-	var openAIResponse OpenAIResponse
-	err = json.NewDecoder(resp.Body).Decode(&openAIResponse)
-	if err != nil {
-		http.Error(w, "Error decoding the response", http.StatusInternalServerError)
+	var openAIResp OpenAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
+		http.Error(w, "Error decoding OpenAI response", http.StatusInternalServerError)
 		return
 	}
 
-	// Extract the text from the OpenAI response (potential invariants)
-	invariants := []string{}
-	for _, choice := range openAIResponse.Choices {
-		// Assuming the response is a plain text list of invariants
-		invariants = append(invariants, strings.TrimSpace(choice.Text))
+	// Process the response into individual invariants
+	var invariants []string
+	if len(openAIResp.Choices) > 0 {
+		content := openAIResp.Choices[0].Message.Content
+		lines := strings.Split(strings.TrimSpace(content), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				invariants = append(invariants, line)
+			}
+		}
 	}
 
-	// Send the invariants back in the response
+	// Send response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,

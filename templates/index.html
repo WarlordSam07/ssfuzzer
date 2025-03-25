@@ -4,116 +4,148 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solidity Invariant Fuzzer</title>
+    <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.12/ace.js"></script>
 </head>
 <body>
-    <h1>Solidity Invariant Fuzzer</h1>
+    <div class="container">
+        <h1>Solidity Invariant Fuzzer</h1>
 
-    <!-- Step 1: Input Solidity Code -->
-    <h2>Step 1: Input Solidity Code</h2>
-    <div id="editor" style="height: 300px; width: 100%;"></div>
-    <button id="submitCode">Submit Code</button>
+        <section>
+            <h2>Step 1: Input Solidity Code</h2>
+            <div id="editor">// Enter your Solidity code here
+contract Example {
+    uint public value;
+    
+    function setValue(uint _value) public {
+        value = _value;
+    }
+}</div>
+            <button id="submitCode">Submit Code</button>
+        </section>
 
-    <!-- Step 2: Potential Invariants -->
-    <h2>Step 2: Potential Invariants</h2>
-    <div id="invariants"></div>
+        <section>
+            <h2>Step 2: Potential Invariants</h2>
+            <div id="invariants"></div>
+        </section>
 
-    <!-- Step 3: Select Invariants and Generate Tests -->
-    <h2>Step 3: Select Invariants and Generate Tests</h2>
-    <button id="generateTests" disabled>Generate Tests</button>
+        <section>
+            <h2>Step 3: Generate Tests</h2>
+            <button id="generateTests" disabled>Generate Tests</button>
+            <div id="generatedTests"></div>
+        </section>
 
-    <!-- Step 4: Generated Test Files -->
-    <h2>Step 4: Generated Test Files</h2>
-    <div id="generatedTests"></div>
-
-    <!-- Step 5: Run Echidna Fuzzing -->
-    <h2>Step 5: Run Echidna Fuzzing</h2>
-    <button id="runEchidna">Run Echidna</button>
+        <section>
+            <h2>Step 4: Run Echidna</h2>
+            <button id="runEchidna">Run Echidna</button>
+            <div id="fuzzerOutput"></div>
+        </section>
+    </div>
 
     <script>
         // Initialize Ace Editor
         var editor = ace.edit("editor");
-        editor.setTheme("ace/theme/github");
-        editor.session.setMode("ace/mode/solidity");
+        editor.setTheme("ace/theme/monokai");
+        editor.session.setMode("ace/mode/javascript");
+        editor.setFontSize(14);
 
-        // Step 1: Handle Submit Code
+        // Submit Code  
         document.getElementById('submitCode').addEventListener('click', async function() {
-            var code = editor.getValue();
-
-            // Send code to backend for processing by ChatGPT
-            const response = await fetch('/submit', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'solidityCode=' + encodeURIComponent(code)
-            });
-
-            const data = await response.json();
-
-            // Step 2: Display potential invariants
-            if (data.success) {
-                const invariantContainer = document.getElementById('invariants');
-                invariantContainer.innerHTML = '';
-                data.invariants.forEach((invariant, index) => {
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.id = 'invariant-' + index;
-                    checkbox.value = invariant;
-                    const label = document.createElement('label');
-                    label.setAttribute('for', 'invariant-' + index);
-                    label.textContent = invariant;
-                    invariantContainer.appendChild(checkbox);
-                    invariantContainer.appendChild(label);
-                    invariantContainer.appendChild(document.createElement('br'));
+            try {
+                const code = editor.getValue();
+                const response = await fetch('/submit-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'solidityCode=' + encodeURIComponent(code)
                 });
 
-                // Enable "Generate Tests" button
-                document.getElementById('generateTests').disabled = false;
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log(data); // Log the raw response for debugging
+
+                if (data.success && Array.isArray(data.invariants)) {
+                    const invariantContainer = document.getElementById('invariants');
+                    invariantContainer.innerHTML = '';
+                    
+                    if (data.invariants.length === 0) {
+                        invariantContainer.innerHTML = '<p>No invariants found.</p>';
+                    } else {
+                        data.invariants.forEach((invariant, index) => {
+                            const div = document.createElement('div');
+                            const checkbox = document.createElement('input');
+                            checkbox.type = 'checkbox';
+                            checkbox.id = `invariant-${index}`;
+                            checkbox.value = invariant;
+                            
+                            const label = document.createElement('label');
+                            label.htmlFor = `invariant-${index}`;
+                            label.textContent = invariant;
+                            
+                            div.appendChild(checkbox);
+                            div.appendChild(label);
+                            div.appendChild(document.createElement('br'));
+                            invariantContainer.appendChild(div);
+                        });
+                    }
+                    document.getElementById('generateTests').disabled = false;
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error submitting code: ' + error.message);
             }
         });
 
-        // Step 3: Handle Generate Tests
+
+        // Generate Tests
         document.getElementById('generateTests').addEventListener('click', async function() {
-            // Get selected invariants
-            const selectedInvariants = [];
-            document.querySelectorAll('#invariants input:checked').forEach((checkbox) => {
-                selectedInvariants.push(checkbox.value);
-            });
+            try {
+                const selectedInvariants = Array.from(document.querySelectorAll('#invariants input:checked')).map(cb => cb.value);
+                const code = editor.getValue();
 
-            // Send selected invariants and code back to backend to generate tests
-            const code = editor.getValue();
-            const response = await fetch('/generate-tests', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    code: code,
-                    invariants: selectedInvariants,
-                }),
-            });
+                const response = await fetch('/generate-tests', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        solidityCode: code,
+                        invariants: selectedInvariants,
+                    }),
+                });
 
-            const data = await response.json();
-
-            // Step 4: Display generated tests
-            if (data.success) {
-                const generatedTestsContainer = document.getElementById('generatedTests');
-                generatedTestsContainer.innerHTML = data.tests.join('<br>');
+                const data = await response.json();
+                if (data.success) {
+                    const generatedTestsContainer = document.getElementById('generatedTests');
+                    generatedTestsContainer.innerHTML = `<pre>${data.testFiles}</pre>`;
+                } else {
+                    throw new Error(data.error || 'Unknown error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error generating tests: ' + error.message);
             }
         });
 
-        // Step 5: Handle Run Echidna
+        // Run Echidna
         document.getElementById('runEchidna').addEventListener('click', async function() {
-            const response = await fetch('/run-echidna', {
-                method: 'POST',
-            });
+            try {
+                const response = await fetch('/run-echidna', {
+                    method: 'POST',
+                });
 
-            const data = await response.json();
-            if (data.success) {
-                alert('Echidna fuzzing has started!');
-            } else {
-                alert('Error running Echidna');
+                const data = await response.json();
+                const outputContainer = document.getElementById('fuzzerOutput');
+                outputContainer.innerHTML = `<pre>${data.message}</pre>`;
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error running Echidna: ' + error.message);
             }
         });
     </script>

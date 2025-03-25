@@ -2,44 +2,59 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 )
 
-// GenerateTests creates test cases for Echidna based on selected invariants
 func GenerateTests(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Invariants   []string `json:"invariants"`
 		SolidityCode string   `json:"solidityCode"`
+		Invariants   []string `json:"invariants"`
 	}
 
-	// Parse the incoming request
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		http.Error(w, "Failed to parse request", http.StatusBadRequest)
 		return
 	}
 
-	// Simulate generating Echidna test cases
-	testFiles := `// Generated Echidna test file for invariants:
-	// - Invariant 1
-	// - Invariant 2
-	// - Invariant 3
+	// Generate Echidna test contract
+	var testContract strings.Builder
+	testContract.WriteString("contract TestContract is ")
+	testContract.WriteString(extractContractName(request.SolidityCode))
+	testContract.WriteString(" {\n")
 
-	function testInvariant1() {
-		// Echidna test logic for Invariant 1
+	// Add invariant functions
+	for i, invariant := range request.Invariants {
+		testContract.WriteString(fmt.Sprintf(`
+    function echidna_test_%d() public returns (bool) {
+        // %s
+        return true; // Replace with actual invariant check
+    }
+`, i+1, invariant))
 	}
 
-	function testInvariant2() {
-		// Echidna test logic for Invariant 2
-	}
+	testContract.WriteString("}\n")
 
-	function testInvariant3() {
-		// Echidna test logic for Invariant 3
-	}`
-
-	// Respond with the generated test files
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":   true,
-		"testFiles": testFiles,
+		"testFiles": testContract.String(),
 	})
+}
+
+func extractContractName(code string) string {
+	// Simple extraction of contract name - could be improved
+	lines := strings.Split(code, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "contract") {
+			parts := strings.Fields(line)
+			for i, part := range parts {
+				if part == "contract" && i+1 < len(parts) {
+					return strings.TrimSpace(parts[i+1])
+				}
+			}
+		}
+	}
+	return "UnknownContract"
 }
