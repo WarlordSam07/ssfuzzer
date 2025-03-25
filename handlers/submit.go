@@ -29,39 +29,64 @@ type OpenAIResponse struct {
 }
 
 func SubmitCode(w http.ResponseWriter, r *http.Request) {
-	code := r.FormValue("solidityCode")
-	if code == "" {
-		http.Error(w, "No code provided", http.StatusBadRequest)
+	w.Header().Set("Content-Type", "application/json")
+
+	var reqBody struct {
+		SolidityCode string `json:"solidityCode"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to parse request body",
+		})
+		return
+	}
+
+	if reqBody.SolidityCode == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "No code provided",
+		})
 		return
 	}
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		http.Error(w, "OpenAI API key not set", http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "OpenAI API key not set",
+		})
 		return
 	}
 
 	// Create the request body for chat completions
-	reqBody := OpenAIRequest{
+	openAIReqBody := OpenAIRequest{
 		Model: "gpt-3.5-turbo",
 		Messages: []ChatMessage{
 			{
 				Role:    "user",
-				Content: fmt.Sprintf("Analyze this Solidity smart contract and list potential invariants. Return each invariant on a new line:\n\n%s", code),
+				Content: fmt.Sprintf("Analyze this Solidity smart contract and list potential invariants. Return each invariant on a new line:\n\n%s", reqBody.SolidityCode),
 			},
 		},
 		Temperature: 0.7,
 	}
 
-	reqJSON, err := json.Marshal(reqBody)
+	reqJSON, err := json.Marshal(openAIReqBody)
 	if err != nil {
-		http.Error(w, "Error preparing request", http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Error preparing request",
+		})
 		return
 	}
 
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqJSON))
 	if err != nil {
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Error creating request",
+		})
 		return
 	}
 
@@ -71,18 +96,23 @@ func SubmitCode(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		http.Error(w, "Error calling OpenAI API", http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Error calling OpenAI API",
+		})
 		return
 	}
 	defer resp.Body.Close()
 
 	var openAIResp OpenAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
-		http.Error(w, "Error decoding OpenAI response", http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Error decoding OpenAI response",
+		})
 		return
 	}
 
-	// Process the response into individual invariants
 	var invariants []string
 	if len(openAIResp.Choices) > 0 {
 		content := openAIResp.Choices[0].Message.Content
@@ -95,8 +125,6 @@ func SubmitCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Send response
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,
 		"invariants": invariants,

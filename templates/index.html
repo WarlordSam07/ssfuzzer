@@ -51,27 +51,29 @@ contract Example {
 
         // Submit Code  
         document.getElementById('submitCode').addEventListener('click', async function() {
+            const invariantContainer = document.getElementById('invariants');
+            invariantContainer.innerHTML = '<p>Analyzing code...</p>';
+            
             try {
                 const code = editor.getValue();
                 const response = await fetch('/submit-code', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Content-Type': 'application/json',
                     },
-                    body: 'solidityCode=' + encodeURIComponent(code)
+                    body: JSON.stringify({ solidityCode: code })
                 });
 
+                const data = await response.json();
+                console.log('Response data:', data);
+
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
                 }
 
-                const data = await response.json();
-                console.log(data); // Log the raw response for debugging
-
+                invariantContainer.innerHTML = '';
+                
                 if (data.success && Array.isArray(data.invariants)) {
-                    const invariantContainer = document.getElementById('invariants');
-                    invariantContainer.innerHTML = '';
-                    
                     if (data.invariants.length === 0) {
                         invariantContainer.innerHTML = '<p>No invariants found.</p>';
                     } else {
@@ -91,17 +93,16 @@ contract Example {
                             div.appendChild(document.createElement('br'));
                             invariantContainer.appendChild(div);
                         });
+                        document.getElementById('generateTests').disabled = false;
                     }
-                    document.getElementById('generateTests').disabled = false;
                 } else {
                     throw new Error('Invalid response format');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Error submitting code: ' + error.message);
+                invariantContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
             }
         });
-
 
         // Generate Tests
         document.getElementById('generateTests').addEventListener('click', async function() {
