@@ -11,16 +11,6 @@ import (
 	"strings"
 )
 
-type EchidnaRequest struct {
-	TestCode string `json:"testCode"`
-}
-
-type EchidnaResponse struct {
-	Success bool   `json:"success"`
-	Output  string `json:"output,omitempty"`
-	Error   string `json:"error,omitempty"`
-}
-
 func RunEchidna(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -35,7 +25,7 @@ func RunEchidna(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create a temporary directory for the test files
+	// Create temporary directory
 	tmpDir, err := ioutil.TempDir("", "echidna_test_")
 	if err != nil {
 		sendErrorResponse(w, "Failed to create temporary directory")
@@ -43,35 +33,57 @@ func RunEchidna(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create the test file
-	testFilePath := filepath.Join(tmpDir, "Test.sol")
-	err = ioutil.WriteFile(testFilePath, []byte(req.TestCode), 0644)
-	if err != nil {
+	// Create Echidna config file
+	configContent := `
+testLimit: 50000
+coverage: true
+corpusDir: "corpus"
+testMode: "property"
+cryticArgs: ["--solc-version", "0.8.0"]
+filterFunctions: ["echidna"]
+seqLen: 100
+shrinkLimit: 5000
+timeout: 300
+`
+	configPath := filepath.Join(tmpDir, "echidna-config.yaml")
+	if err := ioutil.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		sendErrorResponse(w, "Failed to create config file")
+		return
+	}
+
+	// Save test file
+	testFilePath := filepath.Join(tmpDir, "EchidnaTest.sol")
+	if err := ioutil.WriteFile(testFilePath, []byte(req.TestCode), 0644); err != nil {
 		sendErrorResponse(w, "Failed to write test file")
 		return
 	}
 
-	// Run Echidna
-	cmd := exec.Command("echidna", testFilePath, "--config", "echidna-config.yaml")
+	// Run Echidna with improved configuration
+	cmd := exec.Command("echidna",
+		testFilePath,
+		"--config", configPath,
+		"--format", "text",
+		"--contract", "EchidnaTest")
+
 	output, err := cmd.CombinedOutput()
 
-	if err != nil {
-		// Check if it's just a non-zero exit code (which Echidna might return for failed tests)
-		if _, ok := err.(*exec.ExitError); !ok {
-			fmt.Printf("Error running Echidna: %v\n", err)
-			sendErrorResponse(w, "Failed to run Echidna")
-			return
-		}
-	}
-
-	// Send the response
+	// Process output
 	response := EchidnaResponse{
 		Success: true,
 		Output:  string(output),
 	}
 
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			response.Success = false
+			response.Error = fmt.Sprintf("Echidna exited with code %d", exitErr.ExitCode())
+		} else {
+			sendErrorResponse(w, "Failed to run Echidna")
+			return
+		}
+	}
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		fmt.Printf("Error encoding response: %v\n", err)
 		sendErrorResponse(w, "Failed to encode response")
 		return
 	}

@@ -69,6 +69,29 @@
             overflow-x: auto;
         }
 
+        .generated-tests {
+            margin-top: 20px;
+        }
+
+        .test-file {
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .test-file h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .test-file pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+
         .echidna-results {
             padding: 20px;
             background: #f8f9fa;
@@ -157,44 +180,18 @@ contract Example {
         editor.session.setMode("ace/mode/javascript");
         editor.setFontSize(14);
 
+        // Helper function to escape HTML
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         // Submit Code for Analysis
-        document.getElementById('submitCode').addEventListener('click', async function() {// Submit Code for Analysis
-document.getElementById('submitCode').addEventListener('click', async function() {
-    const invariantContainer = document.getElementById('invariants');
-    invariantContainer.innerHTML = '<div class="loading">Analyzing code...</div>';
-    
-    try {
-        const code = editor.getValue();
-        const response = await fetch('/submit-code', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ solidityCode: code })
-        });
-
-        const data = await response.json();
-
-        if (!data.success) {
-            throw new Error(data.error || 'Server returned an error');
-        }
-
-        invariantContainer.innerHTML = '';
-        
-        if (Array.isArray(data.invariants)) {
-            if (data.invariants.length === 0) {
-                invariantContainer.innerHTML = '<p>No invariants found.</p>';
-            } else {
-                // ... rest of the code ...
-            }
-        } else {
-            throw new Error('Invalid response format');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        invariantContainer.innerHTML = `<div class="error">Error: ${error.message}</div>`;
-    }
-});
+        document.getElementById('submitCode').addEventListener('click', async function() {
             const invariantContainer = document.getElementById('invariants');
             invariantContainer.innerHTML = '<div class="loading">Analyzing code...</div>';
             
@@ -279,10 +276,21 @@ document.getElementById('submitCode').addEventListener('click', async function()
                     throw new Error(data.error || 'Failed to generate tests');
                 }
 
-                testContainer.innerHTML = `
-                    <pre><code>${data.testCode}</code></pre>
-                    <input type="hidden" id="testFilePath" value="${data.echidnaFile}">
-                `;
+                // Update to display test contents from the response
+                let testDisplay = '<div class="generated-tests">';
+                data.TestContents.forEach((testContent, index) => {
+                    testDisplay += `
+                        <div class="test-file">
+                            <h3>Test ${index + 1}</h3>
+                            <pre><code class="language-solidity">${escapeHtml(testContent)}</code></pre>
+                        </div>
+                    `;
+                });
+                testDisplay += '</div>';
+                testContainer.innerHTML = testDisplay;
+                
+                // Store the echidna file path
+                testContainer.innerHTML += `<input type="hidden" id="testFilePath" value="${data.echidnaFile}">`;
 
                 document.getElementById('runTests').disabled = false;
 

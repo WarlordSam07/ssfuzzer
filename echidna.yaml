@@ -2,3 +2,11 @@ testLimit: 50000
 coverage: true
 corpusDir: "corpus"
 testMode: "property"
+cryticArgs: 
+  - "--solc-version"
+  - "0.8.0"
+filterFunctions: 
+  - "echidna"
+seqLen: 100
+shrinkLimit: 5000
+timeout: 300
