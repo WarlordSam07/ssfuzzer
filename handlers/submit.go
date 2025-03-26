@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 type OpenAIRequest struct {
@@ -28,6 +30,12 @@ type OpenAIResponse struct {
 	} `json:"choices"`
 }
 
+type Response struct {
+	Success    bool     `json:"success"`
+	Invariants []string `json:"invariants,omitempty"`
+	Error      string   `json:"error,omitempty"`
+}
+
 func SubmitCode(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -36,33 +44,23 @@ func SubmitCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Failed to parse request body",
-		})
+		sendErrorResponse(w, "Failed to parse request body")
 		return
 	}
 
 	if reqBody.SolidityCode == "" {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "No code provided",
-		})
+		sendErrorResponse(w, "No code provided")
 		return
 	}
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "OpenAI API key not set",
-		})
+		sendErrorResponse(w, "OpenAI API key not set")
 		return
 	}
 
-	fmt.Printf("Sending the following code to OpenAI: \n%s\n", reqBody.SolidityCode)
+	fmt.Printf("Processing Solidity code:\n%s\n", reqBody.SolidityCode)
 
-	// Create the request body for chat completions
 	openAIReqBody := OpenAIRequest{
 		Model: "gpt-3.5-turbo",
 		Messages: []ChatMessage{
@@ -76,85 +74,76 @@ func SubmitCode(w http.ResponseWriter, r *http.Request) {
 
 	reqJSON, err := json.Marshal(openAIReqBody)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Error preparing request",
-		})
+		fmt.Printf("Error marshaling request: %v\n", err)
+		sendErrorResponse(w, "Error preparing request")
 		return
 	}
 
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqJSON))
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Error creating request",
-		})
+		fmt.Printf("Error creating request: %v\n", err)
+		sendErrorResponse(w, "Error creating request")
 		return
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: time.Second * 30}
 	resp, err := client.Do(req)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Error making request to OpenAI",
-		})
+		fmt.Printf("Error making request: %v\n", err)
+		sendErrorResponse(w, "Error making request to OpenAI")
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   fmt.Sprintf("OpenAI API returned status code: %d", resp.StatusCode),
-		})
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		fmt.Printf("OpenAI API Error Response: %s\n", string(bodyBytes))
+		sendErrorResponse(w, fmt.Sprintf("OpenAI API returned status code: %d", resp.StatusCode))
 		return
 	}
 
 	var openAIResp OpenAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Error parsing OpenAI response",
-		})
+		fmt.Printf("Error decoding response: %v\n", err)
+		sendErrorResponse(w, "Error parsing OpenAI response")
 		return
 	}
 
-	// Process the response and extract invariants
-	// Process the response and extract invariants
 	var invariants []string
 	if len(openAIResp.Choices) > 0 {
 		content := openAIResp.Choices[0].Message.Content
 		lines := strings.Split(strings.TrimSpace(content), "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
+			line = strings.TrimPrefix(line, "- ")
+			line = strings.TrimPrefix(line, "* ")
 			if line != "" {
 				invariants = append(invariants, line)
 			}
 		}
 	}
 
-	// Log the response for debugging
-	fmt.Printf("OpenAI Response: %+v\n", openAIResp)
 	fmt.Printf("Processed invariants: %+v\n", invariants)
 
-	// Send the final response
-	response := map[string]interface{}{
-		"success":    true,
-		"invariants": invariants, // Make sure this is an array of strings
+	response := Response{
+		Success:    true,
+		Invariants: invariants,
 	}
 
-	// Send the response in the expected format
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Printf("Error encoding response: %v\n", err)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Error encoding response",
-		})
+		sendErrorResponse(w, "Error encoding response")
 		return
 	}
+}
 
+func sendErrorResponse(w http.ResponseWriter, message string) {
+	response := Response{
+		Success: false,
+		Error:   message,
+	}
+	json.NewEncoder(w).Encode(response)
 }

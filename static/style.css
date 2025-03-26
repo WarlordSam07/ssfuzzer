@@ -200,3 +200,46 @@ section {
     background-color: #3498db;
     transition: width 0.3s ease;
 }
+
+.echidna-results {
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-top: 20px;
+}
+
+.passed-tests, .failed-tests, .coverage {
+    margin-bottom: 20px;
+}
+
+.passed-tests h3 {
+    color: #28a745;
+}
+
+.failed-tests h3 {
+    color: #dc3545;
+}
+
+.coverage h3 {
+    color: #17a2b8;
+}
+
+.raw-output {
+    margin-top: 20px;
+}
+
+.raw-output details {
+    background: #f1f1f1;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.raw-output summary {
+    cursor: pointer;
+    padding: 5px;
+}
+
+.raw-output pre {
+    margin-top: 10px;
+    white-space: pre-wrap;
+}
