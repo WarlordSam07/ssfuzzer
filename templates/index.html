@@ -158,7 +158,43 @@ contract Example {
         editor.setFontSize(14);
 
         // Submit Code for Analysis
-        document.getElementById('submitCode').addEventListener('click', async function() {
+        document.getElementById('submitCode').addEventListener('click', async function() {// Submit Code for Analysis
+document.getElementById('submitCode').addEventListener('click', async function() {
+    const invariantContainer = document.getElementById('invariants');
+    invariantContainer.innerHTML = '<div class="loading">Analyzing code...</div>';
+    
+    try {
+        const code = editor.getValue();
+        const response = await fetch('/submit-code', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ solidityCode: code })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Server returned an error');
+        }
+
+        invariantContainer.innerHTML = '';
+        
+        if (Array.isArray(data.invariants)) {
+            if (data.invariants.length === 0) {
+                invariantContainer.innerHTML = '<p>No invariants found.</p>';
+            } else {
+                // ... rest of the code ...
+            }
+        } else {
+            throw new Error('Invalid response format');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        invariantContainer.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+    }
+});
             const invariantContainer = document.getElementById('invariants');
             invariantContainer.innerHTML = '<div class="loading">Analyzing code...</div>';
             
